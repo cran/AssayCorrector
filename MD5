@@ -1,0 +1,14 @@
+3d849d7c98805b40f1f20a216c48fbbd *DESCRIPTION
+61c3a90e778a88a382af686b7d5431dd *NAMESPACE
+49a730bf01e474605e1301f882d4c4c6 *R/AssayCorrector.R
+07998407b0369f51abb7c0dfe106ce3e *R/data.R
+cbbb77a516afa09b73f6cdbc990004a4 *R/kernel.R
+b70ed428f3a0f89f5e0d698aa5853f07 *data/m.rda
+9b6f778a791b84c62d8f4b2859ea0d3c *data/plate7.rda
+d48e3f89642d6cf2807918474ee03d68 *man/correct_bias.Rd
+f612efa0f6049ea2b2cbef926503a874 *man/create_assay.Rd
+bb3c00de7d0e545d86f470ff87211344 *man/detect_bias.Rd
+217ac3d6959e34424b8a83a1d439179a *man/m.Rd
+d574f291251466ce0814124563f0c298 *man/plate7.Rd
+8fb460d7b0a35f5b7f27bc3203331d75 *man/plot.assay.Rd
+83c1abadb3af201987dd656b33b496d7 *man/print.assay.Rd
