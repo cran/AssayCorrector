@@ -21,4 +21,3 @@ None
 \description{
 \code{plot.assay} plots a hit map of the assay (only one plate at a time)
 }
-

@@ -19,4 +19,3 @@ None
 \description{
 \code{print.assay} simply prints a summary of the HTS assay
 }
-

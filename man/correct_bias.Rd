@@ -19,11 +19,10 @@ correct_bias(assay, method = NULL, alpha = 0.05, type = "PA")
 The corrected assay (\code{assay} object)
 }
 \description{
-\code{correct_bias()} (1) uses either the additive or multiplicative PMP (Partial Mean Polish) methods (the most appropriate spatial bias model can be either specified or determined by the program following the results of the Kolmogorov-Smirnov two-sample test) to correct the assay measurements if the plate-specific correction is specified; (2) carries out the assay-specific correction if specified.
+\code{correct_bias()} (1) uses either of the three additive or either of the three multiplicative PMP (Partial Mean Polish) methods (the most appropriate spatial bias model can be either specified or determined by the program following the results of the Kolmogorov-Smirnov, Anderson-Darling or Cramer-von-Mises two-sample test) to correct the assay measurements if the plate-specific correction is specified; (2) carries out the assay-specific correction if specified.
 }
 \examples{
 assay<-create_assay(m)
 detected<-detect_bias(assay)
 corrected<-correct_bias(detected,method=2)
 }
-

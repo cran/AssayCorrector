@@ -4,14 +4,16 @@
 \alias{detect_bias}
 \title{Detect the type of bias present in the assay}
 \usage{
-detect_bias(assay, alpha = 0.01, type = "P")
+detect_bias(assay, alpha = 0.01, type = "P", test = "AD")
 }
 \arguments{
 \item{assay}{The assay to be corrected. Has to be an \code{assay} object.}
 
-\item{alpha}{Significance level threshold (defaults to 0.05)}
+\item{alpha}{Significance level threshold (defaults to 0.01)}
 
 \item{type}{\code{P}:plate-specific, \code{A}:assay-specific, \code{PA}:plate then assay-specific, \code{AP}:assay then plate-specific}
+
+\item{test}{\code{KS}:Kolmogorov-Smirnov (1933), \code{AD}:Anderson-Darling (1952), \code{CVM}:Cramer-von-Mises (1928)}
 }
 \value{
 The corrected assay (\code{assay} object)
@@ -23,4 +25,3 @@ The corrected assay (\code{assay} object)
 assay<-create_assay(m)
 detected<-detect_bias(assay)
 }
-

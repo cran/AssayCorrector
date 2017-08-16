@@ -13,4 +13,3 @@ A 8x12x5 assay (class array) that was generated with partial column bias in the 
 Gaussian noise was then added
 }
 \keyword{datasets}
-

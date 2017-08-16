@@ -4,7 +4,7 @@
 \name{plate7}
 \alias{plate7}
 \title{Plate 7 of raw measurements obtained by Carralot et al. 2012 (Institut Pasteur Korea)}
-\format{An object of class \code{matrix} with 16 rows and 20 columns.}
+\format{An object of class \code{array} of dimension 16 x 20 x 1.}
 \usage{
 plate7
 }
@@ -13,4 +13,3 @@ The seventh plate take from an experimental assay, which showed the evidence of 
 kind of bias in screening technologies.
 }
 \keyword{datasets}
-

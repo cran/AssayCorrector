@@ -53,7 +53,11 @@ plot.assay<-function(x,...,plate=1,type="R"){
 #'
 #' \code{mCorrected} The HTS matrix of corrected measurements, initilized to a zero array, and subsequently storing the corrected version of \code{m} via \code{correct_bias()}
 #'
-#' \code{biasType} Vector of length p, where p is the number of plates. It tell, for each plate of the assay, A:Additive trend, M:Multiplicative trend, U:Undetermined trend and C:Error-free plate.
+#' \code{biasType} Vector of length p, where p is the number of plates. It tells, for each plate of the assay, A:Additive trend, M:Multiplicative trend, U:Undetermined trend and C:Error-free plate.
+#'
+#' \code{biasModel} Vector of length p, where p is the number of plates. It tells, for each plate of the assay, the most likely spatial bias model (1 through 6)
+#'
+#' \code{biasConf} Vector of length p, where p is the number of plates. It tells, for each plate of the assay, the confidence in the model, (0 - lowest to 3-  highest). It is computed by counting the number of bias models (additive or mutliplicative) which agree together.
 #' @examples
 #' # Fictive 8x12x5 assay
 #' assay<-create_assay(m)
@@ -80,7 +84,9 @@ create_assay<-function(m,ctrl=NA){
   colnames(ctrl)=colnames(m)
   assay$m=m
   assay$ctrl=ctrl
-  assay$biasType=NULL
+  assay$biasType=rep(NA,dim(m)[3])
+  assay$biasModel=rep(NA,dim(m)[3])
+  assay$biasConf=rep(NA,dim(m)[3])
   biasPositions=ctrl
   biasPositions[]=0
   assay$biasPositions=biasPositions
@@ -91,68 +97,109 @@ create_assay<-function(m,ctrl=NA){
 #' @title Detect the type of bias present in the assay
 #' @description \code{detect}  (1) identifies rows and columns of all plates of the assay affected by spatial bias (following the results of the Mann-Whitney U test); (2) identifies well locations (i.e., well positions scanned across all plates of a given assay) affected by spatial bias (also following the results of the Mann-Whitney U test).
 #' @param assay The assay to be corrected. Has to be an \code{assay} object.
-#' @param alpha Significance level threshold (defaults to 0.05)
+#' @param alpha Significance level threshold (defaults to 0.01)
 #' @param type \code{P}:plate-specific, \code{A}:assay-specific, \code{PA}:plate then assay-specific, \code{AP}:assay then plate-specific
+#' @param test \code{KS}:Kolmogorov-Smirnov (1933), \code{AD}:Anderson-Darling (1952), \code{CVM}:Cramer-von-Mises (1928)
 #' @examples
 #' assay<-create_assay(m)
 #' detected<-detect_bias(assay)
 #' @return The corrected assay (\code{assay} object)
 #' @export
-detect_bias<-function(assay,alpha=0.01,type="P"){
+detect_bias<-function(assay,alpha=0.01,type="P",test="AD"){
   if(class(assay)!="assay")
     stop("Error: This is not an assay.")
+  ac=as.character
   m=assay$m
   ctrl=assay$ctrl
   biasType=assay$biasType
-  m.additive=ctrl # Initialize empty additive assay
-  m.multiplicative=ctrl # Initialize empty multiplicative assay
+  biasModel=assay$biasModel
+  biasConf=assay$biasConf
+  PMPmapping=c(1,4,5,3,2,6) # Due to a change in the order of methods, need to convert publication notation to code one
+  m.E<-new.env()
+  for (model in 1:6){
+    m.E[[ac(model)]]=ctrl # Initialize empty corrected assay
+  }
   dimensions=dim(m)
   Depth=dimensions[3]
+  .test.f=NULL
+  if(test=="KS")
+    .test.f=function(x,y)ks.test(x,y)$p.value
+  else if(test=="AD")
+    .test.f=function(x,y)as.numeric(tail(strsplit(capture.output(kSamples::ad.test(x,y))[17]," ")[[1]],1))
+  else if(test=="CVM")
+    .test.f=function(x,y)RVAideMemoire::CvM.test(x,y)$p.value
+  else{
+    stop("Error: This is not a valid test. Please use KS, AD or CVM")
+  }
   if(type=="AP") # If we want assay->plate correction, first apply assay-wise correction
     m=.assay(m,ctrl,alpha)
   for (k in 1:Depth){
-    m.additive[,,k]=try(.PMP(m[,,k],ctrl[,,k],1,alpha)) # Correct the plate k using aPMP
-    m.multiplicative[,,k]=try(.PMP(m[,,k],ctrl[,,k],2,alpha)) # Correct the plate k using mPMP
-    if(class(m.additive[,,k])=="try-error" || class(m.multiplicative[,,k])=="try-error")
-      stop("PMP encountered a problem") # Problem in PMP - check your data
-    mww=(m.additive[,,k]!=m[,,k])*1 # Determine which rows and columns the Mann-Whitney test detected as biased (both technologies have same bias locations, hence using additive)
+    for (model in 1:6){
+      m.E[[ac(model)]][,,k]=try(.PMP(m[,,k],ctrl[,,k],PMPmapping[model],alpha)) # Correct the plate k using PMP
+      if(class(m.E[[ac(model)]][,,k])=="try-error")
+        stop("PMP encountered a problem") # Problem in PMP - check your data
+    }
+    mww=(m.E[[ac(1)]][,,k]!=m[,,k])*1 # Determine which rows and columns the Mann-Whitney test detected as biased (both technologies have same bias locations, hence using additive)
     assay$biasPositions[,,k]=mww # Save the bias positions suggested by the Mann-Whitney test
-    biased.additive=list()
-    biased.multiplicative=list()
+    biased.E=new.env()
     unbiased=list()
     for(i in 1:dimensions[1]){
       for(j in 1:dimensions[2]){
         if(mww[i,j]&!ctrl[i,j,k]){ # If the MW test flaged this row/column AND this cell is not a control well
-          biased.additive=c(biased.additive,m.additive[i,j,k]) # Add well (i,j) corrected by aPMP to set of corrected wells
-          biased.multiplicative=c(biased.multiplicative,m.multiplicative[i,j,k]) # Add well corrected by aPMP to set of corrected wells
+          for(model in 1:6){
+            biased.E[[ac(model)]]=c(biased.E[[ac(model)]],m.E[[ac(model)]][i,j,k]) # Add well (i,j) corrected by PMP to set of corrected wells
+          }
         }
         else if(!mww[i,j]&!ctrl[i,j,k]) # If the MW did not flag this row/column AND this cell is not a control well
-          unbiased=c(unbiased,m.additive[i,j,k]) # Add this well to set of unbiased wells
+          unbiased=c(unbiased,m.E[[ac(model)]][i,j,k]) # Add this well to set of unbiased wells
       }
     }
-    biased.additive=unlist(biased.additive)
-    biased.multiplicative=unlist(biased.multiplicative)
+    for(model in 1:6){
+      biased.E[[ac(model)]]=unlist(biased.E[[ac(model)]])
+    }
     unbiased=unlist(unbiased)
-    if(length(biased.multiplicative)*length(biased.additive)==0){ # 100% unbiased
+    if(Reduce(function(x,y)length(biased.E[[ac(y)]])*x,1:6,1)==0){ # 100% unbiased (computed via fold left)
         biasType[k]='C'
         next
-      }
-    pvalue.additive=ks.test(biased.additive,unbiased)$p.value
-    pvalue.multiplicative=ks.test(biased.multiplicative,unbiased)$p.value
-    if(pvalue.additive > alpha & pvalue.multiplicative < alpha) # aPMP did better
-      biasType[k]='A'
-    if(pvalue.additive < alpha & pvalue.multiplicative > alpha) # mPMP did better
-      biasType[k]='M'
-    if(pvalue.additive < alpha & pvalue.multiplicative < alpha) # undetermined, both are bad
+    }
+    pvalue.E=new.env()
+    for(model in 1:6){
+      pvalue.E[[ac(model)]]=.test.f(biased.E[[ac(model)]],unbiased)
+    }
+    aMethods=1:3
+    mMethods=4:6
+    p=function(model)pvalue.E[[ac(model)]]
+    if(all(sapply(aMethods,p) < alpha) & any(sapply(mMethods,p) > alpha)){ # mPMP did better
+      biasType[k]='M' # Bias is multiplicative
+      biasModel[k]=3+which.max(sapply(mMethods,p)) # Model number (between 4 and 6)
+      biasConf[k]=sum(sapply(mMethods,p) > alpha) # Number of good corrections
+    }
+    else if(all(sapply(mMethods,p) < alpha) & any(sapply(aMethods,p) > alpha)){ # aPMP did better
+      biasType[k]='A' # Bias is additive
+      biasModel[k]=which.max(sapply(aMethods,p)) # Model number (between 1 and 3)
+      biasConf[k]=sum(sapply(aMethods,p) > alpha) # Number of good corrections
+    }
+    else if(all(sapply(mMethods,p) < alpha) & all(sapply(aMethods,p) < alpha)){ # Undetermined, both are bad
       biasType[k]='U'
-    if(pvalue.additive > alpha & pvalue.multiplicative > alpha) # undetermined, both are good
-      biasType[k]='U'
+    }
+    else if(all(sapply(mMethods,p) > alpha) & all(sapply(aMethods,p) > alpha)){ # Undetermined, both are good
+      biasModel[k]=which.max(sapply(c(aMethods,mMethods),p)) # Model number (between 1 and 6)
+      biasConf[k]=sum(sapply(c(aMethods,mMethods),p) > alpha) # Number of good corrections
+      biasType[k]=ifelse(biasModel[k]%in%aMethods,'A', # Bias is additive
+                         'M' # Bias is multiplicative
+                         )
+    }
+    else{
+      biasType[k]='U' # Undetermined type of bias, not enough agreement
+    }
   }
-  assay$biasType=biasType # Write the resulting vector back
+  assay$biasType=biasType # Write the resulting vectors back
+  assay$biasModel=biasModel
+  assay$biasConf=biasConf
   return(assay)
 }
 #' @title Correct the bias present in the assay, previously detected by the \code{detect_bias()} method
-#' @description \code{correct_bias()} (1) uses either the additive or multiplicative PMP (Partial Mean Polish) methods (the most appropriate spatial bias model can be either specified or determined by the program following the results of the Kolmogorov-Smirnov two-sample test) to correct the assay measurements if the plate-specific correction is specified; (2) carries out the assay-specific correction if specified.
+#' @description \code{correct_bias()} (1) uses either of the three additive or either of the three multiplicative PMP (Partial Mean Polish) methods (the most appropriate spatial bias model can be either specified or determined by the program following the results of the Kolmogorov-Smirnov, Anderson-Darling or Cramer-von-Mises two-sample test) to correct the assay measurements if the plate-specific correction is specified; (2) carries out the assay-specific correction if specified.
 #' @param assay The assay to be corrected. Has to be an \code{assay} object.
 #' @param method \code{NULL}:autodetect (default), \code{1}:additive, \code{2}:multiplicative
 #' @param alpha Significance level threshold (defaults to 0.05)
@@ -169,6 +216,7 @@ correct_bias<-function(assay,method=NULL,alpha=0.05,type="PA"){
   m=assay$m
   ctrl=assay$ctrl
   biasType=assay$biasType
+  biasModel=assay$biasModel
   dimensions=dim(m)
   Depth=dimensions[3]
   if(is.null(biasType))
@@ -179,10 +227,8 @@ correct_bias<-function(assay,method=NULL,alpha=0.05,type="PA"){
       if(!is.null(method)) # Correct using given method
         mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],method,alpha))
       else{ # Autodetect method for each plate
-        if(biasType[k]=='A')
-          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],1,alpha))
-        if(biasType[k]=='M')
-          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],2,alpha))
+        if(biasType[k]!='U' & !is.na(biasModel[k]))
+          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],biasModel[k],alpha))
         # else, if the bias is undefined, we cannot apply the correction algorithm, so we skip it
       }
     }
@@ -196,10 +242,8 @@ correct_bias<-function(assay,method=NULL,alpha=0.05,type="PA"){
       if(!is.null(method)) # Correct using given method
         mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],method,alpha))
       else{ # Autodetect method for each plate
-        if(biasType[k]=='A')
-          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],1,alpha))
-        if(biasType[k]=='M')
-          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],2,alpha))
+        if(biasType[k]!='U' & !is.na(biasModel[k]))
+          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],biasModel[k],alpha))
         # else, if the bias is undefined, we cannot apply the correction algorithm, so we skip it
       }
     }
@@ -214,10 +258,8 @@ correct_bias<-function(assay,method=NULL,alpha=0.05,type="PA"){
       if(!is.null(method)) # Correct using given method
         mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],method,alpha))
       else{ # Autodetect method for each plate
-        if(biasType[k]=='A')
-          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],1,alpha))
-        if(biasType[k]=='M')
-          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],2,alpha))
+        if(biasType[k]!='U' & !is.na(biasModel[k]))
+          mCorrected[,,k]=try(.PMP(m[,,k],ctrl[,,k],biasModel[k],alpha))
         # else, if the bias is undefined, we cannot apply the correction algorithm, so we skip it
       }
     }
